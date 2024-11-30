@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализатор Рулетки</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .roulette-table {
+            display: grid;
+            grid-template-columns: repeat(13, 1fr);
+            gap: 5px;
+            margin: 20px 0;
+        }
+        .number-cell {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 5px;
+            cursor: pointer;
+            position: relative;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        .number-cell:hover {
+            transform: scale(1.1);
+        }
+        .red { background-color: #dc3545; color: white; }
+        .black { background-color: #212529; color: white; }
+        .green { background-color: #198754; color: white; }
+        
+        .probability-indicator {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            font-size: 0.7em;
+            opacity: 0.8;
+        }
+        
+        .stats-card {
+            height: 100%;
+            transition: all 0.3s;
+        }
+        .stats-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .history-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .number-history {
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            margin: 2px;
+            font-size: 0.8em;
+            color: white;
+        }
+
+        .sequence-number {
+            display: inline-flex;
+            align-items: center;
+            margin: 5px;
+            padding: 5px;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+        }
+
+        .sequence-probability {
+            margin-left: 5px;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-4">
+        <h1 class="text-center mb-4">Анализатор Рулетки</h1>
+        
+        <!-- Рулеточный стол -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">Выберите число</h5>
+                <div class="roulette-table" id="rouletteTable"></div>
+            </div>
+        </div>
+
+        <!-- Статистика -->
+        <div class="row g-4">
+            <!-- Горячие числа -->
+            <div class="col-md-6 col-lg-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Горячие числа</h5>
+                        <div id="hotNumbers"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Холодные числа -->
+            <div class="col-md-6 col-lg-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Холодные числа</h5>
+                        <div id="coldNumbers"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Статистика по цветам -->
+            <div class="col-md-6 col-lg-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Статистика по цветам</h5>
+                        <div id="colorStats"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Вероятности по секторам -->
+            <div class="col-md-6 col-lg-3">
+                <div class="card stats-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Вероятности по секторам</h5>
+                        <div id="sectorProbability"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- История чисел -->
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">История выпавших чисел</h5>
+                <div class="history-list" id="numberHistory"></div>
+            </div>
+        </div>
+
+        <!-- Анализ последовательностей -->
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">Анализ последовательностей</h5>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label for="sequenceNumber">Выберите число для анализа:</label>
+                            <select class="form-select" id="sequenceNumber">
+                                <option value="">Выберите число</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div id="sequenceAnalysis" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Создание рулеточного стола
+        const rouletteColors = {
+            0: 'green',
+            ...Object.fromEntries(
+                Array.from({length: 36}, (_, i) => i + 1)
+                    .map(num => [num, [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36].includes(num) ? 'red' : 'black'])
+            )
+        };
+
+        function createRouletteTable() {
+            const table = document.getElementById('rouletteTable');
+            // Добавляем зеро
+            const zeroCell = document.createElement('div');
+            zeroCell.className = `number-cell green`;
+            zeroCell.innerHTML = `0<span class="probability-indicator">0%</span>`;
+            zeroCell.onclick = () => addNumber(0);
+            table.appendChild(zeroCell);
+            
+            // Добавляем остальные числа
+            for (let i = 1; i <= 36; i++) {
+                const cell = document.createElement('div');
+                cell.className = `number-cell ${rouletteColors[i]}`;
+                cell.innerHTML = `${i}<span class="probability-indicator">0%</span>`;
+                cell.onclick = () => addNumber(i);
+                table.appendChild(cell);
+            }
+        }
+
+        // Обновление статистики
+        async function updateStats() {
+            try {
+                const response = await fetch('/api/analyze');
+                const data = await response.json();
+                globalAnalysisData = data;  // Сохраняем данные глобально
+                
+                // Обновляем историю чисел (показываем только последние 50)
+                const historyDiv = document.getElementById('numberHistory');
+                historyDiv.innerHTML = '';  // Очищаем текущую историю
+                
+                // Берем только последние 50 чисел и отображаем их в обратном порядке
+                const lastNumbers = data.history.slice(0, 50);
+                lastNumbers.forEach(([number, color]) => {
+                    const numberSpan = document.createElement('span');
+                    numberSpan.className = `number-history ${color}`;
+                    numberSpan.textContent = number;
+                    historyDiv.appendChild(numberSpan);
+                });
+
+                // Обновляем вероятности на рулеточном столе
+                Object.entries(data.number_probabilities).forEach(([number, probability]) => {
+                    const cell = document.querySelector(`.number-cell:nth-child(${parseInt(number) + 1})`);
+                    if (cell) {
+                        const indicator = cell.querySelector('.probability-indicator');
+                        indicator.textContent = `${(probability * 100).toFixed(1)}%`;
+                    }
+                });
+
+                // Обновляем горячие числа
+                document.getElementById('hotNumbers').innerHTML = Object.entries(data.hot_numbers)
+                    .map(([num, count]) => `
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="number-history ${rouletteColors[num]}">${num}</span>
+                            <span class="badge bg-primary">${count} раз</span>
+                        </div>
+                    `).join('');
+
+                // Обновляем холодные числа
+                document.getElementById('coldNumbers').innerHTML = Object.entries(data.cold_numbers)
+                    .map(([num, count]) => `
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="number-history ${rouletteColors[num]}">${num}</span>
+                            <span class="badge bg-secondary">${count} раз</span>
+                        </div>
+                    `).join('');
+
+                // Обновляем статистику по цветам
+                document.getElementById('colorStats').innerHTML = Object.entries(data.color_stats)
+                    .map(([color, probability]) => `
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="number-history ${color}"></div>
+                            <span class="badge bg-info">${(probability * 100).toFixed(1)}%</span>
+                        </div>
+                    `).join('');
+
+                // Обновляем вероятности по секторам
+                document.getElementById('sectorProbability').innerHTML = Object.entries(data.sector_probability)
+                    .map(([sector, probability]) => `
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span>${sector}</span>
+                            <span class="badge bg-info">${(probability * 100).toFixed(1)}%</span>
+                        </div>
+                    `).join('');
+
+                // Обновляем анализ последовательностей для текущего выбранного числа
+                const selectedNumber = document.getElementById('sequenceNumber').value;
+                if (selectedNumber !== '') {
+                    updateSequenceAnalysis(selectedNumber);
+                }
+
+            } catch (error) {
+                console.error('Error updating stats:', error);
+            }
+        }
+
+        // Инициализация
+        function initializeSequenceSelect() {
+            const select = document.getElementById('sequenceNumber');
+            for (let i = 0; i <= 36; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = i;
+                select.appendChild(option);
+            }
+            select.addEventListener('change', function() {
+                updateSequenceAnalysis(this.value);
+            });
+        }
+
+        let globalAnalysisData = null;
+
+        // Обновление анализа последовательностей
+        function updateSequenceAnalysis(selectedNumber) {
+            const sequenceAnalysis = document.getElementById('sequenceAnalysis');
+            if (!globalAnalysisData || !globalAnalysisData.sequence_analysis) {
+                sequenceAnalysis.innerHTML = '<div class="alert alert-info">Недостаточно данных для анализа последовательностей</div>';
+                return;
+            }
+
+            const sequences = globalAnalysisData.sequence_analysis[selectedNumber];
+            if (!sequences) {
+                sequenceAnalysis.innerHTML = '<div class="alert alert-info">Нет данных для анализа последовательностей</div>';
+                return;
+            }
+
+            const sortedSequences = Object.entries(sequences)
+                .sort(([,a], [,b]) => b[0] - a[0]);  // Сортировка по вероятности
+
+            sequenceAnalysis.innerHTML = `
+                <div class="alert alert-info">
+                    После числа ${selectedNumber} чаще всего выпадают:
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    ${sortedSequences.map(([num, [prob, count]]) => `
+                        <div class="d-flex align-items-center">
+                            <span class="number-history ${rouletteColors[num]}">${num}</span>
+                            <span class="ms-1 badge bg-info">${(prob * 100).toFixed(1)}% (${count} раз)</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        // Добавление нового числа
+        async function addNumber(number) {
+            try {
+                const response = await fetch('/api/add_number', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ number }),
+                });
+                
+                if (response.ok) {
+                    // Обновляем всю статистику, включая историю
+                    await updateStats();
+                }
+            } catch (error) {
+                console.error('Error adding number:', error);
+            }
+        }
+
+        // Инициализация
+        createRouletteTable();
+        initializeSequenceSelect();
+        updateStats();
+    </script>
+</body>
+</html>
